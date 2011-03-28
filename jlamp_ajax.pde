@@ -3,6 +3,7 @@
 #include <avr/interrupt.h>
 #include <avr/io.h>
 
+#include <Wire.h>
 #include <SPI.h>
 
 ///#define WEBDUINO_SERIAL_DEBUGGING 1
@@ -19,8 +20,9 @@
 #define BLUE_PIN      5
 
 /* fading speeds, lower = faster, too slow might look glitchy*/
-#define FADE_SPEED_MANUAL                20
+#define FADE_SPEED_MANUAL               20
 #define FADE_SPEED_RANDOM               20
+#define TEMPERATURE_READ_SPEED         1000
 
 /* PWM lookup table to linearize LED Brightness. 
 Mathematica Code : Table[Floor[255*(i/32)^(1.5) + 0.5], {i, 1, 32}] 
@@ -53,10 +55,41 @@ uint8_t target_whiteVal = 0;
 boolean fading = false;
 uint16_t fade_counter = 0;
 
+/* temperature read timing counter */
+uint16_t temp_counter = 0;
+float temperature = 0.0f;
+
 /* all URLs on this server will start with /buzz because of how we
  * define the PREFIX value.  We also will listen on port 80, the
  * standard HTTP service port */
 #define PREFIX "/jlamp"
+
+#define LM75_ADDR 0x48
+
+void readTemp() {
+  
+  uint8_t temp_msb = 0;
+  uint8_t temp_lsb = 0;
+  
+  temp_counter = 0;
+  
+  Wire.beginTransmission(LM75_ADDR);
+  Wire.requestFrom(LM75_ADDR,2);
+  
+  if(Wire.available()) {
+    temp_msb = Wire.receive();
+    temp_lsb = Wire.receive(); 
+  }
+  
+  Wire.endTransmission();
+  
+  Serial.print("Temperature: ");
+  Serial.print(temp_msb,DEC);
+  Serial.println((temp_lsb&0x80)>>7==1?".5 C":".0 C");
+
+  temperature = temp_msb + 0.5 * (float)((temp_lsb&0x80) >> 7);
+  
+}
 
 /* RGB to RGBW composition */
 uint8_t computeWhiteVal(uint8_t red, uint8_t green, uint8_t blue) {
@@ -156,6 +189,8 @@ ISR(TIMER2_OVF_vect) {
     }
     break;
   }
+  
+  temp_counter++;
   return;
 };
 
@@ -212,14 +247,19 @@ void defaultWebCmd(WebServer &server, WebServer::ConnectionType type, char * url
 " <link rel=\"stylesheet\" href=\"http://172.31.1.1/~jupp/farbtastic/farbtastic.css\" type=\"text/css\" />\n"
 " <script type=\"text/javascript\" charset=\"utf-8\">\n"
 "var picker;"
-"function changeColor(color) { $.post('/jlamp', { chColor: color.substring(1, 7)} ); }\n"
-"function changeMode(mode) { $.post('/jlamp', {chMode: mode} ); }\n"
+"var locked = false;"
+"function changeColor(color) { if(locked == false) {$.post('/jlamp', { chColor: color.substring(1, 7)} ); } }\n"
+"function changeMode(mode) { if(locked == false) {$.post('/jlamp', {chMode: mode} );  } }\n"
 "function loadState() {\n"
 "$.getJSON(\n"
         "\"/jlamp/status\",\n"
         "function(status) {\n"
+        "  locked = true;\n"
         "  picker.setColor('#' + status.target_redVal.toString(16) + status.target_greenVal.toString(16) + status.target_blueVal.toString(16));\n"
         "  $('#mode').val(status.mode).attr('selected', 'selected');\n"
+        "  $('#temp').text(status.temperature.toString() + \"C\");\n"
+        "  locked = false;\n"
+        "  setTimeout('loadState()',5000);\n"
         "});\n"
     "};\n"
 "$(document).ready(\n"
@@ -234,7 +274,7 @@ void defaultWebCmd(WebServer &server, WebServer::ConnectionType type, char * url
 ");\n"
 "</script>\n"
 "</head>\n"
-"<body style='font-size:62.5%;'>\n"
+"<body style='font-size:100%;'>\n"
 "<h1>jlamp Control Panel</h1>\n"
 "<form action = "" style=\"width:400px;\">\n"
 "Mode: <select id=\"mode\"><option name=\"manual\">manual</option>\n"
@@ -244,6 +284,7 @@ void defaultWebCmd(WebServer &server, WebServer::ConnectionType type, char * url
 "<form action=\"\" style=\"width: 400px;\">\n"
 "<div class=\"form-item\"><label for=\"color\">Color:</label><input type=\"text\" id=\"color\" name=\"color\" value=\"#00000\" /></div><div id=\"picker\"></div>\n" 
 "</form>\n"
+"Temperature: <div id=temp></div>\n"
 "</body>\n"
 "</html>\n";
 
@@ -284,6 +325,9 @@ void statusCmd(WebServer &server, WebServer::ConnectionType type, char * url_tai
       server.print(",\n");
       server.print("\"whiteVal\": ");
       server.print((uint16_t)pwm_lookup[whiteVal]);
+      server.print(",\n");
+      server.print("\"temperature\": ");
+      server.print(temperature);
       server.print( "\n}\n");
   }
 }
@@ -318,6 +362,9 @@ void setup()
   
   /* Debugging output over serial console */
  Serial.begin(9600);
+ Serial.println("Starting Serial Logging");
+ /* TWI for LM75 temperature sensor */
+ Wire.begin();
   
 }
 
@@ -327,6 +374,10 @@ void loop()
 //  Serial.print("processing connection ...");
   webserver.processConnection();
 //  Serial.println(" done");
+   if(temp_counter > TEMPERATURE_READ_SPEED) {
+     readTemp();
+    }
+  
   if(mode == MANUAL) {
   
   } else if (mode == RANDOM) {
