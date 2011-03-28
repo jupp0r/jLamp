@@ -1,0 +1,26 @@
+jLamp README
+
+by Jupp Mueller (jupp0r@gmail.com)
+
+1. Overview
+
+This is a project to create a powerful RGBW LED uplight. There are many of such designs alread, 
+but this one aims to differ in some important aspects:
+
+- full control via a web interface
+- remote control using an iPhone app
+- sound sensitive changing of lamp colors
+- very high power LEDs (see hardware section Below)
+- efficient driver
+- as cheap as possible design
+- using open source soft- and hardware where feasible
+
+2. Hardware being used
+- Arduino Uno (arduino.cc)
+- Arduino Ethernet Shield
+- 2x LEDengin LZC-A0MD40 Leds
+
+3. Software being used (might change over time)
+- Arduino IDE (arduino.cc)
+- Webduino Framework (code.google.com/p/webduino)
+- Farbtastic (acko.net/dev/farbtastic)
