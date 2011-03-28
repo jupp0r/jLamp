@@ -58,6 +58,19 @@ uint16_t fade_counter = 0;
  * standard HTTP service port */
 #define PREFIX "/jlamp"
 
+/* RGB to RGBW composition */
+uint8_t computeWhiteVal(uint8_t red, uint8_t green, uint8_t blue) {
+  uint8_t cmax = max(max(red,green),blue);
+  uint8_t cmin = min(min(red,green),blue);
+  
+  /* computing saturation */
+  uint8_t saturation = cmax-cmin;
+  
+  uint8_t white = ((31-saturation)*(31-16)+16)/31;
+  
+  return white;
+}
+
 /* switch to another mode */
 void switchMode(mode_t newMode) {
   switch(newMode) {
@@ -70,7 +83,7 @@ void switchMode(mode_t newMode) {
       target_greenVal = random(0,32);
       target_blueVal = random(0,32);
       target_whiteVal = random(0,32);
-      fadeStep();
+      fadeStepRGB();
       break;
     case MUSIC:
       mode = MUSIC;
@@ -147,7 +160,7 @@ ISR(TIMER2_OVF_vect) {
 };
 
 /* this is the default webserver callback function */
-void changePWMCmd(WebServer &server, WebServer::ConnectionType type, char *, bool)
+void defaultWebCmd(WebServer &server, WebServer::ConnectionType type, char * url_tail, bool tail_complete)
 {
   uint32_t hexColor;
   if (type == WebServer::POST)
@@ -162,6 +175,7 @@ void changePWMCmd(WebServer &server, WebServer::ConnectionType type, char *, boo
          target_redVal =   map((hexColor & 0xFF0000) >> 16, 0, 255, 0, 31);
          target_greenVal = map((hexColor & 0xFF00) >> 8, 0, 255, 0, 31);
          target_blueVal =  map((hexColor & 0xFF), 0, 255, 0, 31);
+         target_whiteVal = computeWhiteVal(target_redVal,target_greenVal, target_blueVal);
       } else if(strcmp(name, "chMode") == 0) { /* chMode command */
          if(strcmp(value, "manual") == 0) {
            switchMode(MANUAL);
@@ -190,29 +204,40 @@ void changePWMCmd(WebServer &server, WebServer::ConnectionType type, char *, boo
   if (type == WebServer::GET)
   {
     /* store the HTML in program memory using the P macro */
-    P(message) = 
+      P(message) = 
 "<!DOCTYPE html><html><head>\n"
-  "<title>jLamp Control</title>\n"
+"<title>jLamp Control</title>\n"
 " <script type=\"text/javascript\" src=\"http://172.31.1.1/~jupp/farbtastic/jquery.js\"></script>\n"
 " <script type=\"text/javascript\" src=\"http://172.31.1.1/~jupp/farbtastic/farbtastic.js\"></script>\n"
 " <link rel=\"stylesheet\" href=\"http://172.31.1.1/~jupp/farbtastic/farbtastic.css\" type=\"text/css\" />\n"
 " <script type=\"text/javascript\" charset=\"utf-8\">\n"
+"var picker;"
 "function changeColor(color) { $.post('/jlamp', { chColor: color.substring(1, 7)} ); }\n"
 "function changeMode(mode) { $.post('/jlamp', {chMode: mode} ); }\n"
+"function loadState() {\n"
+"$.getJSON(\n"
+        "\"/jlamp/status\",\n"
+        "function(status) {\n"
+        "  picker.setColor('#' + status.target_redVal.toString(16) + status.target_greenVal.toString(16) + status.target_blueVal.toString(16));\n"
+        "  $('#mode').val(status.mode).attr('selected', 'selected');\n"
+        "});\n"
+    "};\n"
 "$(document).ready(\n"
 "  function() {\n"
-"    $('#mode').change(function() {changeMode($(this).val())});"
-"    $('#picker').farbtastic(function(color) {  \n"
+"    $('#mode').change(function() {changeMode($('#mode option:selected').val())});"
+"    picker = $.farbtastic('#picker');"
+"    picker.linkTo(function(color) {  \n"
 "      changeColor(color); $('#color').val(color);  $('#color').css({'background-color':color});\n"
-"    }\n"
-"  )}\n"
+"    });\n"
+"    loadState();\n"
+"  }\n"
 ");\n"
 "</script>\n"
 "</head>\n"
 "<body style='font-size:62.5%;'>\n"
 "<h1>jlamp Control Panel</h1>\n"
 "<form action = "" style=\"width:400px;\">\n"
-"Mode: <select id=\"mode\"><option value=\"manual\">manual</option>\n"
+"Mode: <select id=\"mode\"><option name=\"manual\">manual</option>\n"
 "<option name=\"random\">random</option>\n"
 "<option name=\"music\">music</option>\n"
 "</form>\n"
@@ -222,7 +247,44 @@ void changePWMCmd(WebServer &server, WebServer::ConnectionType type, char *, boo
 "</body>\n"
 "</html>\n";
 
-    server.printP(message);
+      server.printP(message);
+  }
+}
+
+void statusCmd(WebServer &server, WebServer::ConnectionType type, char * url_tail, bool tail_complete) {
+   if (type == WebServer::POST)
+  {
+    server.httpFail();
+  } else {
+  /* for a GET or HEAD, send the standard "it's all OK headers" */
+    server.httpSuccess();
+      server.print("{\n\"mode\": \"");
+      server.print((mode == MANUAL)?"manual":(mode == RANDOM)?"random":(mode==MUSIC)?"music":"unknown");
+      server.print("\",\n");
+      server.print("\"target_redVal\": ");
+      server.print((uint16_t)pwm_lookup[target_redVal]);
+      server.print(",\n");
+      server.print("\"target_greenVal\": "); 
+      server.print((uint16_t)pwm_lookup[target_greenVal]);
+      server.print(",\n");
+      server.print("\"target_blueVal\": ");
+      server.print((uint16_t)pwm_lookup[target_blueVal]);
+      server.print(",\n");
+      server.print("\"target_whiteVal\": ");
+      server.print((uint16_t)pwm_lookup[target_whiteVal]);
+      server.print(",\n");
+      server.print("\"redVal\": ");
+      server.print((uint16_t)pwm_lookup[redVal]);
+      server.print(",\n");
+      server.print("\"greenVal\": ");
+      server.print((uint16_t)pwm_lookup[greenVal]);
+      server.print(",\n");
+      server.print("\"blueVal\": ");
+      server.print((uint16_t)pwm_lookup[blueVal]);
+      server.print(",\n");
+      server.print("\"whiteVal\": ");
+      server.print((uint16_t)pwm_lookup[whiteVal]);
+      server.print( "\n}\n");
   }
 }
 
@@ -247,13 +309,15 @@ void setup()
 
   /* register our default command (activated with the request of
    * http://x.x.x.x/jlamp */
-  webserver.setDefaultCommand(&changePWMCmd);
+  webserver.setDefaultCommand(&defaultWebCmd);
+
+  webserver.addCommand("status",&statusCmd);
 
   /* start the server to wait for connections */
   webserver.begin();
   
   /* Debugging output over serial console */
-//  Serial.begin(9600);
+ Serial.begin(9600);
   
 }
 
