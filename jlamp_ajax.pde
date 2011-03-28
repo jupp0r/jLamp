@@ -20,7 +20,7 @@
 
 /* fading speeds, lower = faster, too slow might look glitchy*/
 #define FADE_SPEED_MANUAL                20
-#define FADE_SPEED_RANDOM               100
+#define FADE_SPEED_RANDOM               20
 
 /* PWM lookup table to linearize LED Brightness. 
 Mathematica Code : Table[Floor[255*(i/32)^(1.5) + 0.5], {i, 1, 32}] 
@@ -82,7 +82,7 @@ void switchMode(mode_t newMode) {
 }
 
 /* fade one step towards the target color */
-void fadeStep(){
+void fadeStepRGB(){
     if(target_redVal > redVal) {
       redVal++;
       analogWrite(RED_PIN, pwm_lookup[redVal]);
@@ -123,7 +123,7 @@ ISR(TIMER2_OVF_vect) {
         return;
       } else {
         fading = true;
-        fadeStep();
+        fadeStepRGB();
       }
     }
     break;
@@ -131,14 +131,15 @@ ISR(TIMER2_OVF_vect) {
     /* random mode: randomly choose another color, slowly fade there */
    case RANDOM:
     fading = true;
+    fade_counter++;
     if(target_redVal == redVal && target_greenVal == greenVal && target_blueVal == blueVal && target_whiteVal == whiteVal) {
       target_redVal = random(0,32);
       target_greenVal = random(0,32);
       target_blueVal = random(0,32);
       target_whiteVal = random(0,32);
     } else if(fade_counter == FADE_SPEED_RANDOM) {
-      fade_counter++; 
-      fadeStep();
+      fade_counter = 0;
+      fadeStepRGB();
     }
     break;
   }
