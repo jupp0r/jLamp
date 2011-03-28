@@ -10,6 +10,8 @@
 #include "Ethernet.h"
 #include "WebServer.h"
 
+#include "jlamp_ajax.h"
+
 /* define color channel pins */
 #define WHITE_PIN     3
 #define RED_PIN       9
@@ -18,11 +20,7 @@
 
 /* fading speeds, lower = faster, too slow might look glitchy*/
 #define FADE_SPEED_MANUAL                20
-#define FADE_SPEED_RANDOM             10000
-#define FADE_SPEED_RANDOM_INTERVAL  1000000
-
-/* modes of operation, currently only MANUAL is implemented */
-typedef enum { MANUAL, RANDOM, MUSIC } modes_t;
+#define FADE_SPEED_RANDOM               100
 
 /* PWM lookup table to linearize LED Brightness. 
 Mathematica Code : Table[Floor[255*(i/32)^(1.5) + 0.5], {i, 1, 32}] 
@@ -37,7 +35,7 @@ static uint8_t mac[6] = { 0x02, 0xAA, 0xBB, 0xCC, 0x00, 0x22 };
 
 static uint8_t ip[4] = { 172, 31, 1, 3 }; // change this to suit your network
 
-static modes_t mode = MANUAL;
+mode_t mode = MANUAL;
 
 /* actual PWM values, being used right now */
 uint8_t redVal = 0;
@@ -59,7 +57,58 @@ uint16_t fade_counter = 0;
  * define the PREFIX value.  We also will listen on port 80, the
  * standard HTTP service port */
 #define PREFIX "/jlamp"
-WebServer webserver(PREFIX, 80);
+
+/* switch to another mode */
+void switchMode(mode_t newMode) {
+  switch(newMode) {
+    case MANUAL:
+      mode = MANUAL;
+      break;
+    case RANDOM:
+      mode = RANDOM;
+      target_redVal = random(0,32);
+      target_greenVal = random(0,32);
+      target_blueVal = random(0,32);
+      target_whiteVal = random(0,32);
+      fadeStep();
+      break;
+    case MUSIC:
+      mode = MUSIC;
+      break;
+    default:
+      // TODO: do some error handling
+      ;
+  }
+}
+
+/* fade one step towards the target color */
+void fadeStep(){
+    if(target_redVal > redVal) {
+      redVal++;
+      analogWrite(RED_PIN, pwm_lookup[redVal]);
+    } else if(target_redVal < redVal) {
+      redVal--;
+      analogWrite(RED_PIN, pwm_lookup[redVal]);
+    } else if(target_greenVal > greenVal) {
+      greenVal++;
+      analogWrite(GREEN_PIN, pwm_lookup[greenVal]);
+    } else if(target_greenVal < greenVal) {
+      greenVal--;      
+      analogWrite(GREEN_PIN, pwm_lookup[greenVal]);
+    } else if(target_blueVal > blueVal) {
+      blueVal++;
+      analogWrite(BLUE_PIN, pwm_lookup[blueVal]);
+    } else if(target_blueVal < blueVal) {
+      blueVal--;
+      analogWrite(BLUE_PIN, pwm_lookup[blueVal]);
+    } else if(target_whiteVal > whiteVal) {
+      whiteVal++;
+      analogWrite(WHITE_PIN, pwm_lookup[whiteVal]);
+    } else if(target_whiteVal < whiteVal) {
+      whiteVal--;
+      analogWrite(WHITE_PIN, pwm_lookup[whiteVal]);      
+    }
+}
 
 /* used for dimming the leds */
 ISR(TIMER2_OVF_vect) {
@@ -74,38 +123,24 @@ ISR(TIMER2_OVF_vect) {
         return;
       } else {
         fading = true;
-        if(target_redVal > redVal) {
-          redVal++;
-          analogWrite(RED_PIN, pwm_lookup[redVal]);
-        } else if(target_redVal < redVal) {
-          redVal--;
-          analogWrite(RED_PIN, pwm_lookup[redVal]);
-        } else if(target_greenVal > greenVal) {
-          greenVal++;
-          analogWrite(GREEN_PIN, pwm_lookup[greenVal]);
-        } else if(target_greenVal < greenVal) {
-          greenVal--;      
-          analogWrite(GREEN_PIN, pwm_lookup[greenVal]);
-        } else if(target_blueVal > blueVal) {
-          blueVal++;
-          analogWrite(BLUE_PIN, pwm_lookup[blueVal]);
-        } else if(target_blueVal < blueVal) {
-          blueVal--;
-          analogWrite(BLUE_PIN, pwm_lookup[blueVal]);
-        } else if(target_whiteVal > whiteVal) {
-          whiteVal++;
-          analogWrite(WHITE_PIN, pwm_lookup[whiteVal]);
-        } else if(target_whiteVal < whiteVal) {
-          whiteVal--;
-          analogWrite(WHITE_PIN, pwm_lookup[whiteVal]);      
-        }
+        fadeStep();
       }
     }
     break;
+    
     /* random mode: randomly choose another color, slowly fade there */
    case RANDOM:
-       
-    
+    fading = true;
+    if(target_redVal == redVal && target_greenVal == greenVal && target_blueVal == blueVal && target_whiteVal == whiteVal) {
+      target_redVal = random(0,32);
+      target_greenVal = random(0,32);
+      target_blueVal = random(0,32);
+      target_whiteVal = random(0,32);
+    } else if(fade_counter == FADE_SPEED_RANDOM) {
+      fade_counter++; 
+      fadeStep();
+    }
+    break;
   }
   return;
 };
@@ -127,7 +162,17 @@ void changePWMCmd(WebServer &server, WebServer::ConnectionType type, char *, boo
          target_greenVal = map((hexColor & 0xFF00) >> 8, 0, 255, 0, 31);
          target_blueVal =  map((hexColor & 0xFF), 0, 255, 0, 31);
       } else if(strcmp(name, "chMode") == 0) { /* chMode command */
-      
+         if(strcmp(value, "manual") == 0) {
+           switchMode(MANUAL);
+         } else if (strcmp(value, "random") == 0) {
+           switchMode(RANDOM);
+         } else if (strcmp(value, "music") == 0) {
+           switchMode(MUSIC);
+         } else {
+           /* unknown mode, switch to manual */
+           Serial.println("unknown Mode error");
+           switchMode(MANUAL);
+         }
       }
    } while (repeat);
     // after procesing the POST data, tell the web browser to reload
@@ -152,8 +197,10 @@ void changePWMCmd(WebServer &server, WebServer::ConnectionType type, char *, boo
 " <link rel=\"stylesheet\" href=\"http://172.31.1.1/~jupp/farbtastic/farbtastic.css\" type=\"text/css\" />\n"
 " <script type=\"text/javascript\" charset=\"utf-8\">\n"
 "function changeColor(color) { $.post('/jlamp', { chColor: color.substring(1, 7)} ); }\n"
+"function changeMode(mode) { $.post('/jlamp', {chMode: mode} ); }\n"
 "$(document).ready(\n"
 "  function() {\n"
+"    $('#mode').change(function() {changeMode($(this).val())});"
 "    $('#picker').farbtastic(function(color) {  \n"
 "      changeColor(color); $('#color').val(color);  $('#color').css({'background-color':color});\n"
 "    }\n"
@@ -163,15 +210,22 @@ void changePWMCmd(WebServer &server, WebServer::ConnectionType type, char *, boo
 "</head>\n"
 "<body style='font-size:62.5%;'>\n"
 "<h1>jlamp Control Panel</h1>\n"
-"<form action="" style=\"width: 400px;\">\n"
+"<form action = "" style=\"width:400px;\">\n"
+"Mode: <select id=\"mode\"><option value=\"manual\">manual</option>\n"
+"<option name=\"random\">random</option>\n"
+"<option name=\"music\">music</option>\n"
+"</form>\n"
+"<form action=\"\" style=\"width: 400px;\">\n"
 "<div class=\"form-item\"><label for=\"color\">Color:</label><input type=\"text\" id=\"color\" name=\"color\" value=\"#00000\" /></div><div id=\"picker\"></div>\n" 
-"</form>\n" 
+"</form>\n"
 "</body>\n"
 "</html>\n";
 
     server.printP(message);
   }
 }
+
+WebServer webserver(PREFIX, 80);
 
 void setup()
 {
@@ -209,7 +263,8 @@ void loop()
   webserver.processConnection();
 //  Serial.println(" done");
   if(mode == MANUAL) {
-   } else if (mode == RANDOM) {
+  
+  } else if (mode == RANDOM) {
     // TODO implement RANDOM mode
   } else if (mode == MUSIC) {
     // TODO implement MUSIC mode
