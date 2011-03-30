@@ -99,7 +99,7 @@ uint8_t computeWhiteVal(uint8_t red, uint8_t green, uint8_t blue) {
   /* computing saturation */
   uint8_t saturation = cmax-cmin;
   
-  uint8_t white = ((31-saturation)*(31-16)+16)/31;
+  uint8_t white = ((31-saturation)*(31-4)+4)/31;
   
   return white;
 }
