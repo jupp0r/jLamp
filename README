@@ -4,7 +4,10 @@ by Jupp Mueller (jupp0r@gmail.com)
 
 1. Overview
 
-This is a project to create a powerful RGBW LED uplight. There are many of such designs alread, 
+This is a project to create a powerful RGBW LED uplight. You can see a
+video of the jLamp functionality at https://vimeo.com/37332778
+
+There are many of such designs already, 
 but this one aims to differ in some important aspects:
 
 - full control via a web interface
