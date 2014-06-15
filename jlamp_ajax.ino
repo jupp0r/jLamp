@@ -35,7 +35,7 @@ static uint8_t pwm_lookup[32] = {1, 4, 7, 11, 16, 21, 26, 32, 38, 45, 51, 59, 66
 // no dead beef here
 static uint8_t mac[6] = { 0x02, 0xAA, 0xBB, 0xCC, 0x00, 0x22 };
 
-static uint8_t ip[4] = { 172, 31, 1, 3 }; // change this to suit your network
+static uint8_t ip[4] = { 192, 168, 1, 250 }; // change this to suit your network
 
 mode_t mode = MANUAL;
 
@@ -242,9 +242,9 @@ void defaultWebCmd(WebServer &server, WebServer::ConnectionType type, char * url
       P(message) = 
 "<!DOCTYPE html><html><head>\n"
 "<title>jLamp Control</title>\n"
-" <script type=\"text/javascript\" src=\"http://172.31.1.1/~jupp/farbtastic/jquery.js\"></script>\n"
-" <script type=\"text/javascript\" src=\"http://172.31.1.1/~jupp/farbtastic/farbtastic.js\"></script>\n"
-" <link rel=\"stylesheet\" href=\"http://172.31.1.1/~jupp/farbtastic/farbtastic.css\" type=\"text/css\" />\n"
+" <script type=\"text/javascript\" src=\"https://jupp0r.de/jlamp/farbtastic/jquery.js\"></script>\n"
+" <script type=\"text/javascript\" src=\"https://jupp0r.de/jlamp/farbtastic/farbtastic.js\"></script>\n"
+" <link rel=\"stylesheet\" href=\"https://jupp0r.de/jlamp/farbtastic/farbtastic.css\" type=\"text/css\" />\n"
 " <script type=\"text/javascript\" charset=\"utf-8\">\n"
 "var picker;"
 "var locked = false;"
